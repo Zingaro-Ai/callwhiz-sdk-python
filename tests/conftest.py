@@ -6,9 +6,9 @@ import httpx
 import respx
 
 # Import your SDK components
-from src.client import CallWhiz
-from src.models import Agent, Call, Webhook, VoiceConfig, LLMConfig, AgentSettings
-from src.exceptions import CallWhizError, AuthenticationError, NotFoundError
+from callwhiz.client import CallWhiz
+from callwhiz.models import Agent, Call
+from callwhiz.exceptions import CallWhizError, AuthenticationError, NotFoundError
 
 
 # Test data fixtures

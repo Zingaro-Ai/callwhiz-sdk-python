@@ -1,7 +1,7 @@
 # tests/unit/test_exceptions.py - Test custom exceptions
 import pytest
 
-from src.exceptions import (
+from callwhiz.exceptions import (
     CallWhizError,
     AuthenticationError,
     NotFoundError,

@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "callwhiz"
-version = "1.0.0"
-description = "Python SDK for CallWhiz AI Voice API"
+version = "2.0.0"
+description = "Python SDK for CallWhiz AI Voice API - Updated for Developer API v1.0"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
     {name = "Zingaro AI LLC", email = "zingaroai.llc@gmail.com"}
 ]
-keywords = ["callwhiz", "ai", "voice", "api", "sdk", "telephony"]
+keywords = ["callwhiz", "ai", "voice", "api", "sdk", "telephony", "multi-stage", "credits"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -52,6 +52,8 @@ test = [
 Homepage = "https://callwhiz.ai"
 Repository = "https://github.com/zingaroai/callwhiz-python"
 "Bug Tracker" = "https://github.com/zingaroai/callwhiz-python/issues"
+Documentation = "https://docs.callwhiz.ai/sdk/python"
+Changelog = "https://github.com/zingaroai/callwhiz-python/blob/main/CHANGELOG.md"
 
 # Test configuration
 [tool.pytest.ini_options]
@@ -62,19 +64,21 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=src",
+    "--cov=callwhiz",
     "--cov-report=term-missing",
     "--cov-report=html",
     "--cov-report=xml",
 ]
 markers = [
     "unit: Unit tests",
-    "integration: Integration tests",
+    "integration: Integration tests that require running API server",
     "slow: Slow tests",
+    "credits: Tests that require credits/billing setup",
+    "webhooks: Tests that require webhook endpoints",
 ]
 
 [tool.coverage.run]
-source = ["src"]
+source = ["callwhiz"]
 omit = ["tests/*", "*/tests/*"]
 
 [tool.coverage.report]
@@ -83,16 +87,48 @@ exclude_lines = [
     "def __repr__",
     "raise AssertionError",
     "raise NotImplementedError",
+    "if __name__ == .__main__.:",
 ]
 
-# Hatch build configuration - FIXED FOR SRC LAYOUT
+# Hatch build configuration - FIXED FOR CORRECT LAYOUT
 [tool.hatch.build.targets.wheel]
-packages = ["src/callwhiz"]
+packages = ["callwhiz"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/src",
+    "/callwhiz",
     "/tests",
     "/README.md",
-    "/LICENSE"
+    "/LICENSE",
+    "/CHANGELOG.md"
 ]
+
+# Black code formatting
+[tool.black]
+line-length = 100
+target-version = ['py38']
+include = '\.pyi?$'
+
+# Ruff linting
+[tool.ruff]
+line-length = 100
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+]
+ignore = [
+    "E501",  # line too long, handled by black
+]
+
+[tool.ruff.isort]
+known-first-party = ["callwhiz"]
+
+# MyPy type checking
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true

@@ -1,19 +1,29 @@
-# callwhiz/client.py - COMPLETE VERSION
+# callwhiz/client.py - UPDATED FOR v2.0.0
 import httpx
 from typing import List, Optional, Dict, Any, Union
-from .models import Agent, Call, Webhook
+from .models import (
+    Agent, Call, Webhook, UserWebhook, 
+    UserCreditsResponse, UserCreditsSimpleResponse,
+    TranscriptResponse, RecordingResponse,
+    CallStage, PhoneNumber
+)
 from .exceptions import CallWhizError, AuthenticationError, NotFoundError, RateLimitError
 
 
 class CallWhiz:
-    def __init__(self, api_key: str, sandbox: bool = True):
+    def __init__(self, api_key: str, base_url: str = "http://localhost:9000/v1"):
         if not api_key:
             raise ValueError("API key is required")
         
         self.api_key = api_key
-        self.base_url = "http://localhost:8000/v1/api/developer/v1"  # Local API
+        self.base_url = base_url.rstrip('/')
+        
+        # Updated authentication to use Bearer token
         self.session = httpx.Client(
-            headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
             timeout=30.0
         )
     
@@ -27,7 +37,8 @@ class CallWhiz:
             data = response.json()
             
             if not data.get("success"):
-                raise CallWhizError(data.get("error", {}).get("message", "Unknown error"))
+                error_info = data.get("error", {})
+                raise CallWhizError(error_info.get("message", "Unknown error"))
             
             return data["data"]
             
@@ -39,58 +50,73 @@ class CallWhiz:
             elif e.response.status_code == 429:
                 raise RateLimitError("Rate limit exceeded")
             else:
-                raise CallWhizError(f"HTTP {e.response.status_code}: {e.response.text}")
+                try:
+                    error_data = e.response.json()
+                    error_msg = error_data.get("error", {}).get("message", f"HTTP {e.response.status_code}")
+                except:
+                    error_msg = f"HTTP {e.response.status_code}: {e.response.text}"
+                raise CallWhizError(error_msg)
         except httpx.RequestError as e:
             raise CallWhizError(f"Request failed: {e}")
 
-    # ===== AGENT METHODS - COMPLETE =====
+    # ===== AGENT METHODS - UPDATED FOR NEW API =====
     def create_agent(
         self,
         name: str,
-        voice: Dict[str, Any],
-        llm: Dict[str, Any], 
-        prompt: str,
+        model: str,  # "lite", "nano", "pro"
+        voice: str,  # Voice name like "Calvin", "Olivia", "Brian"
+        prompt: Optional[str] = None,
+        stages: Optional[List[CallStage]] = None,
         description: Optional[str] = None,
+        language: Optional[str] = None,  # "en", "es", "hi", "te"
+        accent: Optional[str] = None,  # "American", "British" (for English only)
         first_message: Optional[str] = None,
-        settings: Optional[Dict[str, Any]] = None
+        webhook_ids: Optional[List[str]] = None
     ) -> Agent:
         """
-        Create a new voice agent with all available fields
+        Create a new voice agent with updated API structure
         
         Args:
             name: Agent name (required)
-            voice: Voice configuration (required)
-                - provider: "openai", "elevenlabs", etc.
-                - voice_id: Voice ID specific to provider
-                - speed: 0.5-2.0 (default: 1.0)
-                - pitch: 0.5-2.0 (default: 1.0)
-            llm: LLM configuration (required)
-                - provider: "openai", "anthropic", etc.
-                - model: Model name
-                - temperature: 0-2 (default: 0.7)
-                - max_tokens: 1-4000 (default: 150)
-            prompt: System prompt (required)
-            description: Agent description (optional)
-            first_message: Opening message (optional)
-            settings: Agent settings (optional)
-                - max_call_duration: 60-7200 seconds (default: 1800)
-                - enable_interruptions: bool (default: True)
-                - silence_timeout: 1-30 seconds (default: 5)
-                - response_delay: 0-5 seconds (default: 0.5)
+            model: Model type - "lite", "nano", "pro" (required)
+            voice: Voice name like "Calvin", "Olivia", "Brian" (required)
+            prompt: System prompt for single-stage agent
+            stages: List of stages for multi-stage agent
+            description: Agent description
+            language: Language code - "en", "es", "hi", "te"
+            accent: Accent for English voices - "American", "British"
+            first_message: Opening message
+            webhook_ids: IDs of webhooks agent can use
+        
+        Note: Provide either 'prompt' for single-stage or 'stages' for multi-stage agent
         """
+        if not prompt and not stages:
+            raise ValueError("Either 'prompt' or 'stages' must be provided")
+        if prompt and stages:
+            raise ValueError("Provide either 'prompt' for single-stage or 'stages' for multi-stage, not both")
+        
         data = {
             "name": name,
-            "voice": voice,
-            "llm": llm,
-            "prompt": prompt
+            "model": model,
+            "voice": voice
         }
         
         if description is not None:
             data["description"] = description
+        if language is not None:
+            data["language"] = language
+        if accent is not None:
+            data["accent"] = accent
         if first_message is not None:
             data["first_message"] = first_message
-        if settings is not None:
-            data["settings"] = settings
+        if webhook_ids is not None:
+            data["webhook_ids"] = webhook_ids
+        
+        # Single-stage or multi-stage
+        if prompt:
+            data["prompt"] = prompt
+        if stages:
+            data["stages"] = [stage.model_dump() for stage in stages]
             
         result = self._request("POST", "/agents", json=data)
         return Agent(**result)
@@ -104,7 +130,7 @@ class CallWhiz:
         self, 
         page: int = 1,  
         limit: int = 20, 
-        status: Optional[str] = "active"
+        status: Optional[str] = None
     ) -> List[Agent]:
         """
         List all agents
@@ -126,42 +152,38 @@ class CallWhiz:
         agent_id: str,
         name: Optional[str] = None,
         description: Optional[str] = None,
-        voice: Optional[Dict[str, Any]] = None,
-        llm: Optional[Dict[str, Any]] = None,
+        model: Optional[str] = None,
+        voice: Optional[str] = None,
+        language: Optional[str] = None,
+        accent: Optional[str] = None,
         prompt: Optional[str] = None,
         first_message: Optional[str] = None,
-        settings: Optional[Dict[str, Any]] = None,
+        webhook_ids: Optional[List[str]] = None,
+        stages: Optional[List[CallStage]] = None,
         status: Optional[str] = None
     ) -> Agent:
-        """
-        Update agent with any fields
-        
-        Args:
-            agent_id: Agent ID to update
-            name: New agent name
-            description: New description
-            voice: New voice configuration
-            llm: New LLM configuration
-            prompt: New system prompt
-            first_message: New opening message
-            settings: New agent settings
-            status: New status - "active", "inactive", "draft"
-        """
+        """Update agent with new API structure"""
         data = {}
         if name is not None:
             data["name"] = name
         if description is not None:
             data["description"] = description
+        if model is not None:
+            data["model"] = model
         if voice is not None:
             data["voice"] = voice
-        if llm is not None:
-            data["llm"] = llm
+        if language is not None:
+            data["language"] = language
+        if accent is not None:
+            data["accent"] = accent
         if prompt is not None:
             data["prompt"] = prompt
         if first_message is not None:
             data["first_message"] = first_message
-        if settings is not None:
-            data["settings"] = settings
+        if webhook_ids is not None:
+            data["webhook_ids"] = webhook_ids
+        if stages is not None:
+            data["stages"] = [stage.model_dump() for stage in stages]
         if status is not None:
             data["status"] = status
             
@@ -169,11 +191,11 @@ class CallWhiz:
         return Agent(**result)
     
     def delete_agent(self, agent_id: str) -> bool:
-        """Delete agent (soft delete - becomes inactive)"""
+        """Delete agent permanently"""
         self._request("DELETE", f"/agents/{agent_id}")
         return True
 
-    # ===== CALL METHODS - COMPLETE =====
+    # ===== CALL METHODS - UPDATED =====
     def start_call(
         self,
         agent_id: str,
@@ -183,18 +205,7 @@ class CallWhiz:
         metadata: Optional[Dict[str, Any]] = None
     ) -> Call:
         """
-        Initiate a call with all available fields
-        
-        Args:
-            agent_id: ID of agent to use (required)
-            phone_number: Phone number in E.164 format (required)
-            context: Additional context for the agent
-                - customer_name: Customer name
-                - customer_id: Customer ID
-                - purpose: Call purpose
-                - Any other custom fields
-            webhook_url: URL to receive call events
-            metadata: Custom metadata for the call
+        Initiate a call (same as before, but updated response handling)
         """
         data = {
             "agent_id": agent_id,
@@ -225,17 +236,7 @@ class CallWhiz:
         from_date: Optional[str] = None,
         to_date: Optional[str] = None
     ) -> List[Call]:
-        """
-        List calls with filters
-        
-        Args:
-            page: Page number
-            limit: Items per page
-            agent_id: Filter by agent ID
-            status: Filter by status - "initiated", "connecting", "active", "completed", "failed"
-            from_date: Filter calls after date (ISO 8601)
-            to_date: Filter calls before date (ISO 8601)
-        """
+        """List calls with filters"""
         params = {"page": page, "limit": limit}
         if agent_id:
             params["agent_id"] = agent_id
@@ -249,15 +250,17 @@ class CallWhiz:
         result = self._request("GET", "/calls", params=params)
         return [Call(**call) for call in result]
 
-    def get_call_transcript(self, call_id: str) -> Dict[str, Any]:
+    def get_call_transcript(self, call_id: str) -> TranscriptResponse:
         """Get call transcript"""
-        return self._request("GET", f"/calls/{call_id}/transcript")
+        result = self._request("GET", f"/calls/{call_id}/transcript")
+        return TranscriptResponse(**result)
     
-    def get_call_recording(self, call_id: str) -> Dict[str, Any]:
+    def get_call_recording(self, call_id: str) -> RecordingResponse:
         """Get call recording URL"""
-        return self._request("GET", f"/calls/{call_id}/recording")
+        result = self._request("GET", f"/calls/{call_id}/recording")
+        return RecordingResponse(**result)
 
-    # ===== WEBHOOK METHODS - COMPLETE =====
+    # ===== WEBHOOK METHODS - SAME AS BEFORE =====
     def create_webhook(
         self,
         url: str,
@@ -267,23 +270,7 @@ class CallWhiz:
         retry_policy: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None
     ) -> Webhook:
-        """
-        Create webhook with all available fields
-        
-        Args:
-            url: Webhook URL (required)
-            events: List of events to subscribe to (required)
-                Available events:
-                - "call.started", "call.completed", "call.failed"
-                - "call.transcript_ready", "call.recording_ready"
-                - "agent.created", "agent.updated", "agent.deleted"
-            agent_ids: Filter events for specific agents
-            active: Whether webhook is active (default: True)
-            retry_policy: Retry configuration
-                - max_retries: 0-10 (default: 3)
-                - retry_delay: 1-3600 seconds (default: 60)
-            headers: Custom headers to send with webhook
-        """
+        """Create webhook (same as before)"""
         data = {
             "url": url,
             "events": events,
@@ -348,7 +335,152 @@ class CallWhiz:
         result = self._request("GET", "/webhooks/events")
         return result
 
-    # ===== CONVERSATION METHODS =====
+    # ===== NEW: USER WEBHOOKS (FUNCTIONS) =====
+    def create_user_webhook(
+        self,
+        name: str,
+        description: str,
+        endpoint: str,
+        method: str = "POST",
+        parameters: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        auth_type: Optional[str] = None,
+        auth_header_name: Optional[str] = None,
+        auth_value: Optional[str] = None
+    ) -> UserWebhook:
+        """
+        Create a user webhook (function) that agents can call
+        
+        Args:
+            name: Function name (alphanumeric + underscore only)
+            description: What this function does
+            endpoint: URL to call
+            method: HTTP method (default: POST)
+            parameters: Function parameters with JSON Schema
+            headers: Custom headers to send
+            auth_type: "none", "api_key", "bearer"
+            auth_header_name: Header name for auth
+            auth_value: Auth token/key
+        """
+        data = {
+            "name": name,
+            "description": description,
+            "endpoint": endpoint,
+            "method": method
+        }
+        
+        if parameters is not None:
+            data["parameters"] = parameters
+        if headers is not None:
+            data["headers"] = headers
+        if auth_type is not None:
+            data["auth_type"] = auth_type
+        if auth_header_name is not None:
+            data["auth_header_name"] = auth_header_name
+        if auth_value is not None:
+            data["auth_value"] = auth_value
+            
+        result = self._request("POST", "/user-webhooks", json=data)
+        return UserWebhook(**result)
+    
+    def list_user_webhooks(self) -> List[UserWebhook]:
+        """List all user webhooks (functions)"""
+        result = self._request("GET", "/user-webhooks")
+        return [UserWebhook(**webhook) for webhook in result]
+    
+    def get_user_webhook(self, webhook_id: str) -> UserWebhook:
+        """Get user webhook by ID"""
+        result = self._request("GET", f"/user-webhooks/{webhook_id}")
+        return UserWebhook(**result)
+    
+    def update_user_webhook(
+        self,
+        webhook_id: str,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        method: Optional[str] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        auth_type: Optional[str] = None,
+        auth_header_name: Optional[str] = None,
+        auth_value: Optional[str] = None
+    ) -> UserWebhook:
+        """Update user webhook"""
+        data = {}
+        if name is not None:
+            data["name"] = name
+        if description is not None:
+            data["description"] = description
+        if endpoint is not None:
+            data["endpoint"] = endpoint
+        if method is not None:
+            data["method"] = method
+        if parameters is not None:
+            data["parameters"] = parameters
+        if headers is not None:
+            data["headers"] = headers
+        if auth_type is not None:
+            data["auth_type"] = auth_type
+        if auth_header_name is not None:
+            data["auth_header_name"] = auth_header_name
+        if auth_value is not None:
+            data["auth_value"] = auth_value
+            
+        result = self._request("PUT", f"/user-webhooks/{webhook_id}", json=data)
+        return UserWebhook(**result)
+    
+    def delete_user_webhook(self, webhook_id: str) -> bool:
+        """Delete user webhook"""
+        self._request("DELETE", f"/user-webhooks/{webhook_id}")
+        return True
+
+    # ===== NEW: CREDITS API =====
+    def get_credits_simple(self, user_id: Optional[str] = None) -> UserCreditsSimpleResponse:
+        """
+        Get simple credits information
+        
+        Args:
+            user_id: User ID (optional, uses current user if not provided)
+        """
+        params = {}
+        if user_id:
+            params["user_id"] = user_id
+            
+        result = self._request("GET", "/credits/simple", params=params)
+        return UserCreditsSimpleResponse(**result)
+    
+    def get_credits_detailed(self, user_id: Optional[str] = None) -> UserCreditsResponse:
+        """
+        Get detailed credits information including billing details
+        
+        Args:
+            user_id: User ID (optional, uses current user if not provided)
+        """
+        params = {}
+        if user_id:
+            params["user_id"] = user_id
+            
+        result = self._request("GET", "/credits/balance", params=params)
+        return UserCreditsResponse(**result)
+    
+    def check_credits_by_owner_id(self, owner_id: str) -> UserCreditsSimpleResponse:
+        """
+        Check credits using owner_id from agent data
+        
+        Args:
+            owner_id: Owner ID (typically from agent.owner_id)
+        """
+        result = self._request("GET", f"/credits/check/{owner_id}")
+        return UserCreditsSimpleResponse(**result)
+
+    # ===== NEW: PHONE NUMBERS =====
+    def get_user_phone_numbers(self) -> List[PhoneNumber]:
+        """Get all phone numbers assigned to the user"""
+        result = self._request("GET", "/phone-numbers")
+        return [PhoneNumber(**phone) for phone in result]
+
+    # ===== CONVERSATION METHODS - SAME AS BEFORE =====
     def list_conversations(
         self,
         agent_id: Optional[str] = None,
@@ -373,21 +505,14 @@ class CallWhiz:
         """Get detailed conversation data"""
         return self._request("GET", f"/conversations/{conversation_id}")
 
-    # ===== USAGE & ANALYTICS =====
+    # ===== USAGE & ANALYTICS - UPDATED =====
     def get_usage(
         self,
         period: str = "month",
         from_date: Optional[str] = None,
         to_date: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Get API usage statistics
-        
-        Args:
-            period: "day", "week", "month"
-            from_date: Custom start date (ISO 8601)
-            to_date: Custom end date (ISO 8601)
-        """
+        """Get API usage statistics"""
         params = {"period": period}
         if from_date:
             params["from_date"] = from_date
@@ -397,7 +522,7 @@ class CallWhiz:
         return self._request("GET", "/usage", params=params)
     
     def get_credit_balance(self) -> Dict[str, Any]:
-        """Get current credit balance"""
+        """Get current credit balance (legacy - use get_credits_detailed instead)"""
         return self._request("GET", "/usage/credits")
     
     def get_account_limits(self) -> Dict[str, Any]:

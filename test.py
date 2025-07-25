@@ -1,62 +1,149 @@
+# #!/usr/bin/env python3
+# """
+# Simple CallWhiz Agent Creation Script
+# """
+
 from callwhiz import CallWhiz
 
-client = CallWhiz(api_key="cw_test_ACk0txhUbB52Gt1Y2s8gYfS2gLbIiTrl", sandbox=True)
+# Configuration
+API_KEY = "cw_live_5z2AS5vLn9zHjsG1JWuoPmGerDVgMLWJ"  # Replace with your API key
+BASE_URL = "http://localhost:9000/v1"
 
-try:
-    # List only active agents, 5 per page
-    agents = client.list_agents(
-        page=1,
-        limit=20,
-        status="active"  # Filter by status
+def create_agent():
+    """Create a simple agent"""
+    
+    # Initialize client
+    client = CallWhiz(api_key=API_KEY, base_url=BASE_URL)
+    
+    # Create agent
+    agent = client.create_agent(
+        name="My Vinay Agent",
+        model="nano",  # "lite", "nano", or "pro"
+        voice="Calvin",  # Voice name
+        language="en",  # Language code
+        accent="American",  # Accent (for English)
+        prompt="You are a helpful customer service agent.",
+        first_message="Hello! How can I help you today?",
+        description="A simple customer service agent"
     )
     
-    print(f"📋 Found {len(agents)} active agents:")
+    print("✅ Agent created successfully!")
+    print(f"Agent ID: {agent.id}")
+    print(f"Name: {agent.name}")
+    print(f"Voice: {agent.voice}")
+    print(f"Model: {agent.model}")
+    print(f"Language: {agent.language}")
     
-    for agent in agents:
-        print(f"• {agent.name} ({agent.status})")
-        
-except Exception as e:
-    print(f"❌ Error: {e}")
+    return agent.id
 
-client.close()
+if __name__ == "__main__":
+    try:
+        agent_id = create_agent()
+        print(f"\n🎉 Done! Agent ID: {agent_id}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
 
+
+
+# #!/usr/bin/env python3
 
 # from callwhiz import CallWhiz
+# import json
 
-# client = CallWhiz(api_key="cw_test_ACk0txhUbB52Gt1Y2s8gYfS2gLbIiTrl", sandbox=True)
-
-# try:
-#     agent = client.create_agent(
-#         name="My Complete Agent",
-#         voice={
-#             "provider": "openai",
-#             "voice_id": "alloy",
-#             "speed": 1.0,
-#             "pitch": 1.0
-#         },
-#         llm={
-#             "provider": "openai",
-#             "model": "gpt-4",
-#             "temperature": 0.7,
-#             "max_tokens": 150
-#         },
-#         prompt="You are a helpful customer service agent. Be friendly and professional.",
-#         description="AI agent for customer support with advanced settings",
-#         first_message="Hello! Welcome to our service. How can I help you today?",
-#         settings={
-#             "max_call_duration": 1800,
-#             "enable_interruptions": True,
-#             "silence_timeout": 5,
-#             "response_delay": 0.5
-#         }
-#     )
+# def list_all_agents():
+#     # Initialize the client with your API key
+#     api_key = "cw_live_Ftp1LTmndBXzy52Sxeywm3atSxMzgXDD"  # Replace with your actual API key
+#     base_url = "http://localhost:9000/v1"  # Update if different
     
-#     print("✅ Agent created successfully!")
-#     print(f"   ID: {agent.id}")
-#     print(f"   Name: {agent.name}")
-#     print(f"   Status: {agent.status}")
-    
-# except Exception as e:
-#     print(f"❌ Error: {e}")
+#     try:
+#         # Create client instance
+#         client = CallWhiz(api_key=api_key, base_url=base_url)
+        
+#         # List all agents (default: page 1, limit 20)
+#         print("Fetching agents...")
+#         agents = client.list_agents()
+        
+#         print(f"\nFound {len(agents)} agents:")
+#         print("=" * 50)
+        
+#         for i, agent in enumerate(agents, 1):
+#             print(f"\n{i}. Agent ID: {agent.id}")
+#             print(f"   Name: {agent.name}")
+#             print(f"   Model: {agent.model}")
+#             print(f"   Voice: {agent.voice}")
+#         client.close()
+        
+#     except Exception as e:
+#         print(f"Error: {e}")
 
-# client.close()
+# def list_agents_with_filters():
+#     """List agents with custom filters"""
+#     api_key = "cw_live_Ftp1LTmndBXzy52Sxeywm3atSxMzgXDD"  # Replace with your actual API key
+#     base_url = "http://localhost:9000/v1"
+    
+#     try:
+#         client = CallWhiz(api_key=api_key, base_url=base_url)
+        
+#         # List active agents only
+#         active_agents = client.list_agents(status="active")
+#         print(f"Active agents: {len(active_agents)}")
+        
+#         # List with custom pagination
+#         more_agents = client.list_agents(page=1, limit=50)
+#         print(f"Agents (limit 50): {len(more_agents)}")
+        
+#         # List inactive agents
+#         inactive_agents = client.list_agents(status="inactive")
+#         print(f"Inactive agents: {len(inactive_agents)}")
+        
+#         client.close()
+        
+#     except Exception as e:
+#         print(f"Error: {e}")
+
+# def list_agents_json():
+#     """List agents and output as JSON"""
+#     api_key = "cw_live_Ftp1LTmndBXzy52Sxeywm3atSxMzgXDD"  # Replace with your actual API key
+#     base_url = "http://localhost:9000/v1"
+    
+#     try:
+#         client = CallWhiz(api_key=api_key, base_url=base_url)
+#         agents = client.list_agents()
+        
+#         # Convert to dict for JSON serialization
+#         agents_data = []
+#         for agent in agents:
+#             agent_dict = {
+#                 "id": agent.id,
+#                 "name": agent.name,
+#                 "model": agent.model,
+#                 "voice": agent.voice,
+#                 "status": getattr(agent, 'status', None),
+#                 "language": getattr(agent, 'language', None),
+#                 "description": getattr(agent, 'description', None),
+#                 "created_at": getattr(agent, 'created_at', None),
+#                 "updated_at": getattr(agent, 'updated_at', None)
+#             }
+#             agents_data.append(agent_dict)
+        
+#         print(json.dumps(agents_data, indent=2, default=str))
+#         client.close()
+        
+#     except Exception as e:
+#         print(f"Error: {e}")
+
+# if __name__ == "__main__":
+#     # Basic listing
+#     list_all_agents()
+    
+#     print("\n" + "="*60 + "\n")
+    
+#     # With filters
+#     print("FILTERED RESULTS:")
+#     list_agents_with_filters()
+    
+#     print("\n" + "="*60 + "\n")
+    
+#     # JSON output
+#     print("JSON OUTPUT:")
+#     list_agents_json()
